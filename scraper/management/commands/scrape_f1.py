@@ -3,11 +3,17 @@ import requests
 from bs4 import BeautifulSoup
 import datetime
 import json
+from pymongo import MongoClient
+from dateutil.parser import parse
 
 class Command(BaseCommand):
     help = 'Scrapes the F1 website'
 
     def handle(self, *args, **options):
+        client = MongoClient('mongodb+srv://visServer:Tk3cWqcWfMda040p@f1-visualised.pqqpwfw.mongodb.net/?retryWrites=true&w=majority&appName=F1-Visualised')
+        db = client['F1-Visualised']
+        collection = db['GPDates']
+
         current_year = datetime.datetime.now().year
         response = requests.get(f'https://www.formula1.com/en/racing/{current_year}.html')
         print(f'https://www.formula1.com/en/racing/{current_year}.html')
@@ -23,18 +29,32 @@ class Command(BaseCommand):
 
                 # Extract the month(s)
                 months_element = element.select_one("span.month-wrapper")
-                print(f"Months Element: {months_element}")
                 if months_element:
                     months_text = months_element.text.strip()
                     # If there are multiple months, take the last one
                     months = months_text.split('-')[-1].strip()
                 else:
                     months = None
+                
+                if end_date and months:
+                    date_str = f'{end_date} {months} {current_year}'
+                    date = parse(date_str)
+                    date_str = date.strftime('%Y-%m-%d')
 
-                races.append({
-                    'end_date': end_date,
-                    'month': months
-                })
+                race = {
+                    'date': date_str,
+                    'completed': False
+                }
+
+                races.append(race)
+                try:
+                    # Replace the document if it exists, insert it if it doesn't
+                    result = collection.replace_one({'date': race['date']}, race, upsert=True)
+                    print(f'Result: {result.raw_result}')  # Print the result of the operation
+                except Exception as e:
+                    print(f'Error: {e}')  # Print the error
+                #collection.replace_one({'date' : race['date']}, race, upsert=True)
+
             return json.dumps(races)
         else:
             return 'Failed to fetch data from F1 website.'
